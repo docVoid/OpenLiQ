@@ -1,6 +1,11 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { getConnection, startConnection } from "../../../lib/signalr";
+
 export default function PlayerLobbyPage() {
+  const router = useRouter();
   const nickname =
     typeof window !== "undefined"
       ? sessionStorage.getItem("openliq_nickname")
@@ -9,6 +14,22 @@ export default function PlayerLobbyPage() {
     typeof window !== "undefined"
       ? sessionStorage.getItem("openliq_game_pin")
       : null;
+
+  useEffect(() => {
+    const conn = getConnection();
+    startConnection();
+
+    const onGameStarted = () => {
+      console.log("GameStarted event received");
+      router.push("/player/game");
+    };
+
+    conn.on("GameStarted", onGameStarted);
+
+    return () => {
+      conn.off("GameStarted", onGameStarted);
+    };
+  }, [router]);
 
   return (
     <main className="min-h-screen p-8 bg-white flex items-center justify-center">

@@ -35,3 +35,24 @@ export async function stopConnection() {
     await connection.stop();
   }
 }
+
+export async function getQuizzes(): Promise<
+  Array<{ id: string; title: string; description: string }>
+> {
+  return new Promise((resolve, reject) => {
+    const conn = getConnection();
+    const handler = (
+      quizzes: Array<{ id: string; title: string; description: string }>
+    ) => {
+      conn.off("QuizzesReceived", handler);
+      resolve(quizzes);
+    };
+    conn.on("QuizzesReceived", handler);
+    conn.invoke("GetQuizzes").catch(reject);
+  });
+}
+
+export async function startGame(pin: string, quizId: string): Promise<void> {
+  const conn = getConnection();
+  await conn.invoke("StartGame", pin, quizId);
+}

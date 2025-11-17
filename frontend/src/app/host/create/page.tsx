@@ -1,13 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getConnection, startConnection } from "../../../lib/signalr";
+import { useRouter } from "next/navigation";
+import {
+  getConnection,
+  startConnection,
+  getQuizzes,
+  startGame,
+} from "../../../lib/signalr";
+
+interface Quiz {
+  id: string;
+  title: string;
+  description: string;
+}
 
 export default function HostCreatePage() {
+  const router = useRouter();
   const [pin, setPin] = useState<string | null>(null);
   const [players, setPlayers] = useState<
     Array<{ connectionId: string; nickname: string }>
   >([]);
+  const [quizList, setQuizList] = useState<Quiz[]>([]);
+  const [selectedQuizId, setSelectedQuizId] = useState<string>("");
   const [started, setStarted] = useState(false);
 
   useEffect(() => {
@@ -21,7 +36,6 @@ export default function HostCreatePage() {
 
     const onPlayerJoined = (payload: any) => {
       console.log("PlayerJoined", payload);
-      // payload has Nickname and ConnectionId
     };
 
     const onPlayerListUpdated = (list: any[]) => {
@@ -34,25 +48,46 @@ export default function HostCreatePage() {
       );
     };
 
+    const onGameStarted = (dto: any) => {
+      console.log("GameStarted", dto);
+      setStarted(true);
+      router.push("/host/game");
+    };
+
     conn.on("LobbyCreated", onLobbyCreated);
     conn.on("PlayerJoined", onPlayerJoined);
     conn.on("PlayerListUpdated", onPlayerListUpdated);
+    conn.on("GameStarted", onGameStarted);
 
-    // create the lobby
+    // Create the lobby
     conn.invoke("CreateLobby").catch((err) => console.error(err));
+
+    // Fetch quizzes
+    getQuizzes()
+      .then((quizzes) => {
+        console.log("Quizzes received:", quizzes);
+        setQuizList(quizzes);
+        if (quizzes.length > 0) {
+          setSelectedQuizId(quizzes[0].id);
+        }
+      })
+      .catch((err) => console.error("Failed to fetch quizzes", err));
 
     return () => {
       conn.off("LobbyCreated", onLobbyCreated);
       conn.off("PlayerJoined", onPlayerJoined);
       conn.off("PlayerListUpdated", onPlayerListUpdated);
+      conn.off("GameStarted", onGameStarted);
     };
-  }, []);
+  }, [router]);
 
   const handleStart = async () => {
-    if (!pin) return;
-    const conn = getConnection();
-    await conn.invoke("StartGame", pin);
-    setStarted(true);
+    if (!pin || !selectedQuizId) return;
+    try {
+      await startGame(pin, selectedQuizId);
+    } catch (err) {
+      console.error("Failed to start game", err);
+    }
   };
 
   return (
@@ -90,10 +125,37 @@ export default function HostCreatePage() {
           </ul>
         </div>
 
+        <div className="mb-8">
+          <h2 className="text-2xl font-semibold mb-4">Select Quiz</h2>
+          {quizList.length === 0 ? (
+            <p className="text-gray-500">Loading quizzes...</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {quizList.map((quiz) => (
+                <div
+                  key={quiz.id}
+                  onClick={() => setSelectedQuizId(quiz.id)}
+                  className={`p-4 rounded-lg cursor-pointer border-2 transition ${
+                    selectedQuizId === quiz.id
+                      ? "border-yellow-400 bg-yellow-50"
+                      : "border-gray-300 bg-white hover:border-gray-400"
+                  }`}
+                >
+                  <h3 className="text-lg font-semibold text-black">
+                    {quiz.title}
+                  </h3>
+                  <p className="text-sm text-gray-600">{quiz.description}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div>
           <button
             onClick={handleStart}
-            className="px-6 py-3 rounded-md font-semibold"
+            disabled={!selectedQuizId}
+            className="px-6 py-3 rounded-md font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: "#FFD100" }}
           >
             Start Game
