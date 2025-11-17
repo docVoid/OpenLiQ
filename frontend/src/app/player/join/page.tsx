@@ -11,9 +11,6 @@ export default function PlayerJoinPage() {
   const router = useRouter();
 
   useEffect(() => {
-    startConnection();
-    const conn = getConnection();
-
     const onJoinResult = (success: boolean, message: string) => {
       console.log("JoinResult", success, message);
       if (success) {
@@ -26,9 +23,14 @@ export default function PlayerJoinPage() {
       }
     };
 
-    conn.on("JoinResult", onJoinResult);
+    (async () => {
+      const conn = await startConnection();
+      conn.on("JoinResult", onJoinResult);
+    })();
+
     return () => {
-      conn.off("JoinResult", onJoinResult);
+      const conn = getConnection();
+      if (conn) conn.off("JoinResult", onJoinResult);
     };
   }, [pin, nickname, router]);
 
@@ -36,6 +38,10 @@ export default function PlayerJoinPage() {
     e.preventDefault();
     setError(null);
     const conn = getConnection();
+    if (!conn) {
+      setError("Connection not established");
+      return;
+    }
     try {
       await conn.invoke("JoinLobby", pin, nickname);
     } catch (err) {

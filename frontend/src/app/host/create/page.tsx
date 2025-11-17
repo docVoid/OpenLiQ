@@ -24,14 +24,13 @@ export default function HostCreatePage() {
   const [quizList, setQuizList] = useState<Quiz[]>([]);
   const [selectedQuizId, setSelectedQuizId] = useState<string>("");
   const [started, setStarted] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const conn = getConnection();
-    startConnection();
-
     const onLobbyCreated = (generatedPin: string) => {
       console.log("LobbyCreated", generatedPin);
       setPin(generatedPin);
+      sessionStorage.setItem("openliq_game_pin", generatedPin);
     };
 
     const onPlayerJoined = (payload: any) => {
@@ -54,37 +53,48 @@ export default function HostCreatePage() {
       router.push("/host/game");
     };
 
-    conn.on("LobbyCreated", onLobbyCreated);
-    conn.on("PlayerJoined", onPlayerJoined);
-    conn.on("PlayerListUpdated", onPlayerListUpdated);
-    conn.on("GameStarted", onGameStarted);
-
-    // Create the lobby
-    conn.invoke("CreateLobby").catch((err) => console.error(err));
-
-    // Fetch quizzes
-    getQuizzes()
-      .then((quizzes) => {
+    (async () => {
+      try {
+        setLoading(true);
+        const conn = await startConnection();
+        console.log("Connection established");
+        conn.on("LobbyCreated", onLobbyCreated);
+        conn.on("PlayerJoined", onPlayerJoined);
+        conn.on("PlayerListUpdated", onPlayerListUpdated);
+        conn.on("GameStarted", onGameStarted);
+        await conn.invoke("CreateLobby");
+        console.log("Lobby created");
+        const quizzes = await getQuizzes();
         console.log("Quizzes received:", quizzes);
         setQuizList(quizzes);
         if (quizzes.length > 0) {
           setSelectedQuizId(quizzes[0].id);
         }
-      })
-      .catch((err) => console.error("Failed to fetch quizzes", err));
+      } catch (err) {
+        console.error("Failed to initialize lobby:", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
 
     return () => {
-      conn.off("LobbyCreated", onLobbyCreated);
-      conn.off("PlayerJoined", onPlayerJoined);
-      conn.off("PlayerListUpdated", onPlayerListUpdated);
-      conn.off("GameStarted", onGameStarted);
+      const conn = getConnection();
+      if (conn) {
+        conn.off("LobbyCreated", onLobbyCreated);
+        conn.off("PlayerJoined", onPlayerJoined);
+        conn.off("PlayerListUpdated", onPlayerListUpdated);
+        conn.off("GameStarted", onGameStarted);
+      }
     };
   }, [router]);
 
   const handleStart = async () => {
     if (!pin || !selectedQuizId) return;
     try {
-      await startGame(pin, selectedQuizId);
+      const conn = getConnection();
+      if (conn) {
+        await conn.invoke("StartGame", pin, selectedQuizId);
+      }
     } catch (err) {
       console.error("Failed to start game", err);
     }
@@ -101,7 +111,7 @@ export default function HostCreatePage() {
             className="inline-block px-8 py-6 rounded-md text-5xl font-extrabold"
             style={{ backgroundColor: "#000", color: "#FFD100" }}
           >
-            {pin ?? "-----"}
+            {loading ? "..." : pin ?? "-----"}
           </div>
         </div>
 
@@ -127,8 +137,10 @@ export default function HostCreatePage() {
 
         <div className="mb-8">
           <h2 className="text-2xl font-semibold mb-4">Select Quiz</h2>
-          {quizList.length === 0 ? (
-            <p className="text-gray-500">Loading quizzes...</p>
+          {loading || quizList.length === 0 ? (
+            <p className="text-gray-500">
+              {loading ? "Loading quizzes..." : "No quizzes available"}
+            </p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {quizList.map((quiz) => (
@@ -154,7 +166,7 @@ export default function HostCreatePage() {
         <div>
           <button
             onClick={handleStart}
-            disabled={!selectedQuizId}
+            disabled={!selectedQuizId || loading}
             className="px-6 py-3 rounded-md font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: "#FFD100" }}
           >

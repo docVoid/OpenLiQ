@@ -16,18 +16,19 @@ export default function PlayerLobbyPage() {
       : null;
 
   useEffect(() => {
-    const conn = getConnection();
-    startConnection();
-
     const onGameStarted = () => {
       console.log("GameStarted event received");
       router.push("/player/game");
     };
 
-    conn.on("GameStarted", onGameStarted);
+    (async () => {
+      const conn = await startConnection();
+      conn.on("GameStarted", onGameStarted);
+    })();
 
     return () => {
-      conn.off("GameStarted", onGameStarted);
+      const conn = getConnection();
+      if (conn) conn.off("GameStarted", onGameStarted);
     };
   }, [router]);
 

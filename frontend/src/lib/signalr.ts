@@ -2,57 +2,54 @@ import * as signalR from "@microsoft/signalr";
 
 let connection: signalR.HubConnection | null = null;
 
-export function getConnection(): signalR.HubConnection {
-  if (!connection) {
-    connection = new signalR.HubConnectionBuilder()
-      .withUrl(
-        `${
-          process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000"
-        }/hubs/game`,
-        { withCredentials: true }
-      )
-      .withAutomaticReconnect()
-      .configureLogging(signalR.LogLevel.Information)
-      .build();
-  }
-  return connection;
-}
+export const getConnection = () => connection;
 
-export async function startConnection() {
-  const conn = getConnection();
-  if (conn.state === signalR.HubConnectionState.Disconnected) {
-    try {
-      await conn.start();
-      console.log("SignalR connected");
-    } catch (err) {
-      console.error("SignalR start failed", err);
-    }
+export const startConnection = async () => {
+  if (connection?.state === signalR.HubConnectionState.Connected) {
+    return connection;
   }
-}
 
-export async function stopConnection() {
+  connection = new signalR.HubConnectionBuilder()
+    .withUrl("/hubs/game")
+    .withAutomaticReconnect()
+    .build();
+
+  try {
+    await connection.start();
+    console.log("SignalR connected");
+    return connection;
+  } catch (error) {
+    console.error("SignalR connection failed:", error);
+    throw error;
+  }
+};
+
+export const stopConnection = async () => {
   if (connection) {
     await connection.stop();
+    console.log("SignalR disconnected");
   }
-}
+};
 
-export async function getQuizzes(): Promise<
-  Array<{ id: string; title: string; description: string }>
-> {
-  return new Promise((resolve, reject) => {
-    const conn = getConnection();
-    const handler = (
-      quizzes: Array<{ id: string; title: string; description: string }>
-    ) => {
-      conn.off("QuizzesReceived", handler);
-      resolve(quizzes);
-    };
-    conn.on("QuizzesReceived", handler);
-    conn.invoke("GetQuizzes").catch(reject);
-  });
-}
+export const getQuizzes = async () => {
+  if (
+    !connection ||
+    connection.state !== signalR.HubConnectionState.Connected
+  ) {
+    console.warn("Connection not ready for getQuizzes");
+    return [];
+  }
+  const quizzes = await fetch("/api/quiz").then((r) => r.json());
+  return quizzes;
+};
 
-export async function startGame(pin: string, quizId: string): Promise<void> {
-  const conn = getConnection();
-  await conn.invoke("StartGame", pin, quizId);
-}
+export const startGame = async (pin: string, quizId: string) => {
+  if (
+    !connection ||
+    connection.state !== signalR.HubConnectionState.Connected
+  ) {
+    console.warn("Connection not ready for startGame");
+    return;
+  }
+  await connection.invoke("StartGame", pin, quizId);
+};

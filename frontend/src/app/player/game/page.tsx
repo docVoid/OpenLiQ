@@ -9,19 +9,19 @@ export default function PlayerGamePage() {
   const [status, setStatus] = useState<string>("Loading...");
 
   useEffect(() => {
-    const conn = getConnection();
-    startConnection();
-
     const onGameStarted = () => {
       setStatus("Game Started!");
     };
 
-    conn.on("GameStarted", onGameStarted);
-
-    console.log("Player game page loaded, connection state:", conn.state);
+    (async () => {
+      const conn = await startConnection();
+      conn.on("GameStarted", onGameStarted);
+      console.log("Player game page loaded, connection state:", conn.state);
+    })();
 
     return () => {
-      conn.off("GameStarted", onGameStarted);
+      const conn = getConnection();
+      if (conn) conn.off("GameStarted", onGameStarted);
     };
   }, []);
 
