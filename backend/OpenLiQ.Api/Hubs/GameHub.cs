@@ -11,11 +11,13 @@ public class GameHub : Hub
 {
     private readonly ILogger<GameHub> _logger;
     private readonly GameStateService _gameState;
+    private readonly IQuizRepository _quizRepository;
 
-    public GameHub(ILogger<GameHub> logger, GameStateService gameState)
+    public GameHub(ILogger<GameHub> logger, GameStateService gameState, IQuizRepository quizRepository)
     {
         _logger = logger;
         _gameState = gameState;
+        _quizRepository = quizRepository;
     }
 
     public override async Task OnConnectedAsync()
@@ -81,9 +83,19 @@ public class GameHub : Hub
     }
 
     /// <summary>
-    /// Host starts the game for the given PIN.
+    /// Get all available quiz catalogs.
     /// </summary>
-    public async Task StartGame(string pin)
+    public async Task GetQuizzes()
+    {
+        var quizzes = _quizRepository.GetAllQuizzes();
+        var dtos = quizzes.Select(q => new { q.Id, q.Title, q.Description }).ToList();
+        await Clients.Caller.SendAsync("QuizzesReceived", dtos);
+    }
+
+    /// <summary>
+    /// Host starts the game for the given PIN with a specific quiz.
+    /// </summary>
+    public async Task StartGame(string pin, Guid quizId)
     {
         var caller = Context.ConnectionId;
         if (!_gameState.TryGetGame(pin, out var session))
@@ -98,10 +110,10 @@ public class GameHub : Hub
             return;
         }
 
-        var started = _gameState.StartGame(pin, caller);
+        var started = _gameState.StartGame(pin, caller, quizId);
         if (!started)
         {
-            await Clients.Caller.SendAsync("StartResult", false, "Unable to start");
+            await Clients.Caller.SendAsync("StartResult", false, "Unable to start game");
             return;
         }
 
@@ -110,3 +122,4 @@ public class GameHub : Hub
         await Clients.Group(pin).SendAsync("GameStarted", dto);
     }
 }
+

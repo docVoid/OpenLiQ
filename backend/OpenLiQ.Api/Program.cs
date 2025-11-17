@@ -20,6 +20,9 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // Add SignalR
 builder.Services.AddSignalR();
 
+// Add quiz repository (singleton)
+builder.Services.AddSingleton<IQuizRepository, InMemoryQuizRepository>();
+
 // Add in-memory game state service (singleton for app lifetime)
 builder.Services.AddSingleton<GameStateService>();
 
