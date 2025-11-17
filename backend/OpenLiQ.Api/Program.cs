@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OpenLiQ.Api.Data;
 using OpenLiQ.Api.Hubs;
+using OpenLiQ.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +19,9 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 // Add SignalR
 builder.Services.AddSignalR();
+
+// Add in-memory game state service (singleton for app lifetime)
+builder.Services.AddSingleton<GameStateService>();
 
 // Add CORS
 builder.Services.AddCors(options =>
