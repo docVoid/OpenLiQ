@@ -87,6 +87,7 @@ export default function HostCreatePage() {
       }
     };
   }, [router]);
+  }, [router]);
 
   const handleStart = async () => {
     if (!pin || !selectedQuizId) return;
