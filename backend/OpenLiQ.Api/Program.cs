@@ -24,6 +24,8 @@ builder.Services.AddSignalR();
 builder.Services.AddSingleton<IQuizRepository, InMemoryQuizRepository>();
 
 // Add in-memory game state service (singleton for app lifetime)
+// Register quiz repository and game state
+builder.Services.AddSingleton<OpenLiQ.Api.Services.IQuizRepository, OpenLiQ.Api.Services.InMemoryQuizRepository>();
 builder.Services.AddSingleton<GameStateService>();
 
 // Add CORS

@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using OpenLiQ.Api.Services;
 using OpenLiQ.Api.Models;
@@ -12,11 +16,14 @@ public class GameHub : Hub
     private readonly ILogger<GameHub> _logger;
     private readonly GameStateService _gameState;
     private readonly IQuizRepository _quizRepository;
+    private readonly IQuizRepository _quizRepository;
 
+    public GameHub(ILogger<GameHub> logger, GameStateService gameState, IQuizRepository quizRepository)
     public GameHub(ILogger<GameHub> logger, GameStateService gameState, IQuizRepository quizRepository)
     {
         _logger = logger;
         _gameState = gameState;
+        _quizRepository = quizRepository;
         _quizRepository = quizRepository;
     }
 
@@ -95,6 +102,7 @@ public class GameHub : Hub
     /// <summary>
     /// Host starts the game for the given PIN with a specific quiz.
     /// </summary>
+    public async Task StartGame(string pin, Guid quizId)
     public async Task StartGame(string pin, Guid quizId)
     {
         var caller = Context.ConnectionId;

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Concurrent;
+using System.Linq;
 using OpenLiQ.Api.Models;
 
 namespace OpenLiQ.Api.Services;
@@ -73,6 +75,9 @@ public class GameStateService
     public bool StartGame(string pin, string hostConnectionId, Guid quizId)
     {
         if (!_games.TryGetValue(pin, out var session)) return false;
+
+        var quiz = _quizRepository.GetQuizById(quizId);
+        if (quiz is null) return false;
 
         lock (session)
         {
