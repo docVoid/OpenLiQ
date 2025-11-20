@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 using OpenLiQ.Api.Services;
 using OpenLiQ.Api.Models;
 
@@ -16,14 +17,11 @@ public class GameHub : Hub
     private readonly ILogger<GameHub> _logger;
     private readonly GameStateService _gameState;
     private readonly IQuizRepository _quizRepository;
-    private readonly IQuizRepository _quizRepository;
 
-    public GameHub(ILogger<GameHub> logger, GameStateService gameState, IQuizRepository quizRepository)
     public GameHub(ILogger<GameHub> logger, GameStateService gameState, IQuizRepository quizRepository)
     {
         _logger = logger;
         _gameState = gameState;
-        _quizRepository = quizRepository;
         _quizRepository = quizRepository;
     }
 
@@ -39,10 +37,7 @@ public class GameHub : Hub
         await base.OnDisconnectedAsync(exception);
     }
 
-    /// <summary>
-    /// Host creates a new lobby and becomes the host for that PIN.
-    /// </summary>
-    public async Task CreateLobby()
+    public async Task<string> CreateLobby()
     {
         var hostId = Context.ConnectionId;
         var session = _gameState.CreateGame(hostId);
@@ -52,11 +47,9 @@ public class GameHub : Hub
 
         _logger.LogInformation("Lobby created {Pin} by {Host}", session.GamePin, hostId);
         await Clients.Caller.SendAsync("LobbyCreated", session.GamePin);
+        return session.GamePin;
     }
 
-    /// <summary>
-    /// Player attempts to join a lobby by PIN and nickname.
-    /// </summary>
     public async Task JoinLobby(string pin, string nickname)
     {
         var connectionId = Context.ConnectionId;
@@ -68,7 +61,7 @@ public class GameHub : Hub
         }
 
         var ok = _gameState.JoinGame(pin, nickname, connectionId, out var player);
-        if (!ok || player is null)
+        if (!ok)
         {
             await Clients.Caller.SendAsync("JoinResult", false, "Unable to join");
             return;
@@ -82,27 +75,19 @@ public class GameHub : Hub
         // Notify host that a new player joined
         if (!string.IsNullOrEmpty(session.HostConnectionId))
         {
-            await Clients.Client(session.HostConnectionId).SendAsync("PlayerJoined", new { player.Nickname, player.ConnectionId });
+            await Clients.Client(session.HostConnectionId).SendAsync("PlayerJoined", new { player?.Nickname, player?.ConnectionId });
         }
 
-        // Optionally broadcast updated player list to the group
+        // Broadcast updated player list to the group
         await Clients.Group(pin).SendAsync("PlayerListUpdated", session.Players.Select(p => new { p.ConnectionId, p.Nickname }));
     }
 
-    /// <summary>
-    /// Get all available quiz catalogs.
-    /// </summary>
-    public async Task GetQuizzes()
+    public Task<List<QuizCatalog>> GetQuizzes()
     {
-        var quizzes = _quizRepository.GetAllQuizzes();
-        var dtos = quizzes.Select(q => new { q.Id, q.Title, q.Description }).ToList();
-        await Clients.Caller.SendAsync("QuizzesReceived", dtos);
+        var catalogs = _quizRepository.GetAllQuizzes();
+        return Task.FromResult(catalogs);
     }
 
-    /// <summary>
-    /// Host starts the game for the given PIN with a specific quiz.
-    /// </summary>
-    public async Task StartGame(string pin, Guid quizId)
     public async Task StartGame(string pin, Guid quizId)
     {
         var caller = Context.ConnectionId;
@@ -121,13 +106,130 @@ public class GameHub : Hub
         var started = _gameState.StartGame(pin, caller, quizId);
         if (!started)
         {
-            await Clients.Caller.SendAsync("StartResult", false, "Unable to start game");
+            await Clients.Caller.SendAsync("StartResult", false, "Unable to start");
             return;
         }
 
-        // Notify all clients in the group to navigate to the game view
-        var dto = new GameStatusDto(pin, session.CurrentState.ToString(), session.Players.Count, session.CurrentQuestionIndex);
-        await Clients.Group(pin).SendAsync("GameStarted", dto);
+        // Notify all clients in the group that the game started
+        await Clients.Group(pin).SendAsync("GameStarted");
+    }
+
+    public async Task NextQuestion(string pin)
+    {
+        var caller = Context.ConnectionId;
+        if (!_gameState.TryGetGame(pin, out var session))
+        {
+            _logger.LogWarning("NextQuestion: Lobby not found for pin {Pin}", pin);
+            return;
+        }
+
+        if (session.HostConnectionId != caller)
+        {
+            _logger.LogWarning("NextQuestion: Only host can request next question");
+            return;
+        }
+
+        var ok = _gameState.NextQuestion(pin, caller, out var question, out var timeLimit);
+        if (!ok || question is null)
+        {
+            // no more questions -> compile final leaderboard and send game over
+            _logger.LogInformation("NextQuestion: Game over - compiling final results");
+            if (_gameState.CompileRoundResults(pin, out var countsEmpty, out var correctEmpty, out var leaderboardEmpty, out var gameOverEmpty))
+            {
+                var top = leaderboardEmpty.Take(3).ToList();
+                await Clients.Group(pin).SendAsync("GameOver", top);
+            }
+            return;
+        }
+
+        // send question to group (players will show answers, host shows question)
+        var payload = new
+        {
+            Text = question.Text,
+            Answers = question.Answers.Select(a => a.Text).ToArray(),
+            TimeLimit = timeLimit,
+            QuestionIndex = session.CurrentQuestionIndex
+        };
+
+        _logger.LogInformation("NextQuestion: Sending question {Index} to pin {Pin}", session.CurrentQuestionIndex, pin);
+        await Clients.Group(pin).SendAsync("QuestionStarted", payload);
+    }
+
+    public async Task SubmitAnswer(string pin, int answerIndex)
+    {
+        var caller = Context.ConnectionId;
+        if (!_gameState.TryGetGame(pin, out var session))
+        {
+            await Clients.Caller.SendAsync("AnswerResult", false, 0);
+            return;
+        }
+
+        var ok = _gameState.SubmitAnswer(pin, caller, answerIndex, out var isCorrect, out var newScore, out var allAnswered);
+        await Clients.Caller.SendAsync("AnswerResult", isCorrect, newScore);
+
+        if (ok && allAnswered)
+        {
+            // compile results and broadcast
+            if (_gameState.CompileRoundResults(pin, out var counts, out var correctIndex, out var leaderboard, out var gameOver))
+            {
+                var resultPayload = new
+                {
+                    Counts = counts,
+                    CorrectIndex = correctIndex,
+                    Leaderboard = leaderboard
+                };
+
+                await Clients.Group(pin).SendAsync("RoundResults", resultPayload);
+
+                // send individual feedback
+                foreach (var p in session.Players)
+                {
+                    var hasAns = session.CurrentAnswers.TryGetValue(p.ConnectionId, out var idx);
+                    var pIsCorrect = hasAns && idx == correctIndex;
+                    var pScore = session.Scores.ContainsKey(p.ConnectionId) ? session.Scores[p.ConnectionId] : 0;
+                    await Clients.Client(p.ConnectionId).SendAsync("RoundFeedback", new { Correct = pIsCorrect, Score = pScore });
+                }
+
+                if (gameOver)
+                {
+                    var top = leaderboard.Take(3).ToList();
+                    await Clients.Group(pin).SendAsync("GameOver", top);
+                }
+            }
+        }
+    }
+
+    public async Task RevealRound(string pin)
+    {
+        var caller = Context.ConnectionId;
+        if (!_gameState.TryGetGame(pin, out var session)) return;
+        if (session.HostConnectionId != caller) return;
+
+        if (_gameState.CompileRoundResults(pin, out var counts, out var correctIndex, out var leaderboard, out var gameOver))
+        {
+            var resultPayload = new
+            {
+                Counts = counts,
+                CorrectIndex = correctIndex,
+                Leaderboard = leaderboard
+            };
+
+            await Clients.Group(pin).SendAsync("RoundResults", resultPayload);
+
+            foreach (var p in session.Players)
+            {
+                var hasAns = session.CurrentAnswers.TryGetValue(p.ConnectionId, out var idx);
+                var pIsCorrect = hasAns && idx == correctIndex;
+                var pScore = session.Scores.ContainsKey(p.ConnectionId) ? session.Scores[p.ConnectionId] : 0;
+                await Clients.Client(p.ConnectionId).SendAsync("RoundFeedback", new { Correct = pIsCorrect, Score = pScore });
+            }
+
+            if (gameOver)
+            {
+                var top = leaderboard.Take(3).ToList();
+                await Clients.Group(pin).SendAsync("GameOver", top);
+            }
+        }
     }
 }
 

@@ -1,19 +1,16 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using OpenLiQ.Api.Models;
 
 namespace OpenLiQ.Api.Services;
 
-/// <summary>
-/// In-memory, thread-safe game state manager (MVP).
-/// Stores active games keyed by a short PIN.
-/// </summary>
 public class GameStateService
 {
     private readonly ConcurrentDictionary<string, GameSession> _games = new();
-    private readonly IQuizRepository _quizRepository;
     private readonly Random _rng = new();
+    private readonly IQuizRepository _quizRepository;
 
     public GameStateService(IQuizRepository quizRepository)
     {
@@ -22,7 +19,6 @@ public class GameStateService
 
     private string GeneratePin()
     {
-        // 6-digit numeric PIN
         return _rng.Next(100000, 999999).ToString();
     }
 
@@ -58,7 +54,6 @@ public class GameStateService
 
         lock (session)
         {
-            // Prevent duplicate connectionId
             if (session.Players.Any(p => p.ConnectionId == connectionId))
             {
                 joinedPlayer = session.Players.First(p => p.ConnectionId == connectionId);
@@ -82,149 +77,117 @@ public class GameStateService
         lock (session)
         {
             if (session.HostConnectionId != hostConnectionId) return false;
-            
-            // Load quiz
-            var quiz = _quizRepository.GetQuizById(quizId);
-            if (quiz == null) return false;
-
             session.CurrentState = GameState.InGame;
             session.CurrentQuestions = quiz.Questions;
-            session.CurrentQuestionIndex = 0;
+            session.CurrentQuestionIndex = -1;
+            session.Scores = session.Players.ToDictionary(p => p.ConnectionId, p => 0);
+            session.CurrentAnswers = new Dictionary<string, int>();
             return true;
         }
     }
 
-    /// <summary>
-    /// SubmitAnswer processes a player's answer submission.
-    /// Returns: ("Correct", points) | ("Wrong", 0) | ("AlreadyAnswered", 0) | ("QuestionNotFound", 0)
-    /// </summary>
-    public (string Status, int PointsAwarded) SubmitAnswer(string pin, string connectionId, int answerIndex)
+    public bool NextQuestion(string pin, string hostConnectionId, out Question? question, out int timeLimit)
     {
-        if (!_games.TryGetValue(pin, out var session))
-            return ("GameNotFound", 0);
+        question = null;
+        timeLimit = 10;
+        if (!_games.TryGetValue(pin, out var session)) return false;
 
         lock (session)
         {
-            // Check if player already answered
-            if (session.PlayersAnsweredCurrentQuestion.Contains(connectionId))
-                return ("AlreadyAnswered", 0);
+            if (session.HostConnectionId != hostConnectionId) return false;
 
-            // Check if current question exists
-            if (session.CurrentQuestionIndex < 0 || session.CurrentQuestionIndex >= session.CurrentQuestions.Count)
-                return ("QuestionNotFound", 0);
-
-            var question = session.CurrentQuestions[session.CurrentQuestionIndex];
-            if (answerIndex < 0 || answerIndex >= question.Answers.Count)
-                return ("InvalidAnswer", 0);
-
-            // Mark player as answered
-            session.PlayersAnsweredCurrentQuestion.Add(connectionId);
-
-            var answer = question.Answers[answerIndex];
-            if (!answer.IsCorrect)
-                return ("Wrong", 0);
-
-            // Award points (MVP: fixed 1000 points for correct answer)
-            int pointsAwarded = 1000;
-            if (!session.PlayerScores.ContainsKey(connectionId))
-                session.PlayerScores[connectionId] = 0;
-
-            session.PlayerScores[connectionId] += pointsAwarded;
-            return ("Correct", pointsAwarded);
-        }
-    }
-
-    /// <summary>
-    /// GetCurrentQuestion returns the current question or null if game is over.
-    /// </summary>
-    public Question? GetCurrentQuestion(string pin)
-    {
-        if (!_games.TryGetValue(pin, out var session))
-            return null;
-
-        lock (session)
-        {
-            if (session.CurrentQuestionIndex < 0 || session.CurrentQuestionIndex >= session.CurrentQuestions.Count)
-                return null;
-
-            return session.CurrentQuestions[session.CurrentQuestionIndex];
-        }
-    }
-
-    /// <summary>
-    /// RequestNextQuestion advances to the next question and resets answer tracking.
-    /// Returns the Question object, or null if game is over.
-    /// </summary>
-    public Question? RequestNextQuestion(string pin)
-    {
-        if (!_games.TryGetValue(pin, out var session))
-            return null;
-
-        lock (session)
-        {
-            // Move to next question
             session.CurrentQuestionIndex++;
+            if (session.CurrentQuestions == null || session.CurrentQuestionIndex < 0 || session.CurrentQuestionIndex >= session.CurrentQuestions.Count)
+            {
+                return false;
+            }
 
-            // Reset answered tracking
-            session.PlayersAnsweredCurrentQuestion.Clear();
+            question = session.CurrentQuestions[session.CurrentQuestionIndex];
+            timeLimit = question.TimeLimitSeconds > 0 ? question.TimeLimitSeconds : 10;
+            session.CurrentAnswers = new Dictionary<string, int>();
 
-            // Check bounds
-            if (session.CurrentQuestionIndex >= session.CurrentQuestions.Count)
-                return null;
+            // Ensure scores exist for players
+            foreach (var p in session.Players)
+            {
+                if (!session.Scores.ContainsKey(p.ConnectionId)) session.Scores[p.ConnectionId] = 0;
+            }
 
-            return session.CurrentQuestions[session.CurrentQuestionIndex];
+            return true;
         }
     }
 
-    /// <summary>
-    /// GetLeaderboard returns sorted list of players by score (descending).
-    /// </summary>
-    public List<LeaderboardEntry> GetLeaderboard(string pin)
+    public bool SubmitAnswer(string pin, string connectionId, int answerIndex, out bool isCorrect, out int newScore, out bool allAnswered)
     {
-        if (!_games.TryGetValue(pin, out var session))
-            return new();
+        isCorrect = false;
+        newScore = 0;
+        allAnswered = false;
+
+        if (!_games.TryGetValue(pin, out var session)) return false;
 
         lock (session)
         {
-            var leaderboard = new List<LeaderboardEntry>();
-            foreach (var player in session.Players)
+            if (session.CurrentQuestionIndex < 0 || session.CurrentQuestionIndex >= session.CurrentQuestions.Count) return false;
+
+            if (session.CurrentAnswers.ContainsKey(connectionId))
             {
-                var score = session.PlayerScores.TryGetValue(player.ConnectionId, out var s) ? s : 0;
-                leaderboard.Add(new LeaderboardEntry(player.Nickname, score));
+                isCorrect = session.CurrentQuestions[session.CurrentQuestionIndex].Answers[session.CurrentAnswers[connectionId]].IsCorrect;
+                newScore = session.Scores.ContainsKey(connectionId) ? session.Scores[connectionId] : 0;
+                allAnswered = session.CurrentAnswers.Count == session.Players.Count;
+                return true;
             }
 
-            // Sort by score descending
-            return leaderboard.OrderByDescending(e => e.Score).ToList();
+            var q = session.CurrentQuestions[session.CurrentQuestionIndex];
+            if (answerIndex < 0 || answerIndex >= q.Answers.Count) return false;
+
+            isCorrect = q.Answers[answerIndex].IsCorrect;
+            if (isCorrect)
+            {
+                const int points = 100;
+                if (!session.Scores.ContainsKey(connectionId)) session.Scores[connectionId] = 0;
+                session.Scores[connectionId] += points;
+            }
+
+            session.CurrentAnswers[connectionId] = answerIndex;
+            newScore = session.Scores.ContainsKey(connectionId) ? session.Scores[connectionId] : 0;
+            allAnswered = session.CurrentAnswers.Count == session.Players.Count;
+            return true;
         }
     }
 
-    /// <summary>
-    /// GetRoundResults returns answer statistics for current question.
-    /// </summary>
-    public (int CorrectCount, int TotalAnswers, int CorrectAnswerIndex) GetRoundResults(string pin)
+    public bool CompileRoundResults(string pin, out int[] counts, out int correctIndex, out List<(string Nickname, int Score)> leaderboard, out bool gameOver)
     {
-        if (!_games.TryGetValue(pin, out var session))
-            return (0, 0, -1);
+        counts = Array.Empty<int>();
+        correctIndex = -1;
+        leaderboard = new List<(string, int)>();
+        gameOver = false;
+
+        if (!_games.TryGetValue(pin, out var session)) return false;
 
         lock (session)
         {
-            if (session.CurrentQuestionIndex < 0 || session.CurrentQuestionIndex >= session.CurrentQuestions.Count)
-                return (0, 0, -1);
+            if (session.CurrentQuestionIndex < 0 || session.CurrentQuestionIndex >= session.CurrentQuestions.Count) return false;
 
-            var question = session.CurrentQuestions[session.CurrentQuestionIndex];
-            var correctCount = 0;
-            var correctAnswerIndex = -1;
+            var q = session.CurrentQuestions[session.CurrentQuestionIndex];
+            var answersCount = q.Answers.Count;
+            counts = new int[answersCount];
 
-            for (int i = 0; i < question.Answers.Count; i++)
+            foreach (var ans in session.CurrentAnswers.Values)
             {
-                if (question.Answers[i].IsCorrect)
-                {
-                    correctCount++;
-                    correctAnswerIndex = i;
-                }
+                if (ans >= 0 && ans < answersCount) counts[ans]++;
             }
 
-            return (session.PlayersAnsweredCurrentQuestion.Count, session.Players.Count, correctAnswerIndex);
+            for (int i = 0; i < q.Answers.Count; i++)
+            {
+                if (q.Answers[i].IsCorrect) { correctIndex = i; break; }
+            }
+
+            leaderboard = session.Players
+                .Select(p => (p.Nickname, session.Scores.ContainsKey(p.ConnectionId) ? session.Scores[p.ConnectionId] : 0))
+                .OrderByDescending(t => t.Item2)
+                .ToList();
+
+            gameOver = session.CurrentQuestionIndex >= session.CurrentQuestions.Count - 1;
+            return true;
         }
     }
 }

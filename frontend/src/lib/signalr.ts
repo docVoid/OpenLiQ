@@ -36,11 +36,21 @@ export const getQuizzes = async () => {
     !connection ||
     connection.state !== signalR.HubConnectionState.Connected
   ) {
-    console.warn("Connection not ready for getQuizzes");
+    try {
+      await startConnection();
+    } catch {
+      console.warn("Connection not ready for getQuizzes");
+      return [];
+    }
+  }
+
+  try {
+    const catalogs = await connection!.invoke<any[]>("GetQuizzes");
+    return catalogs ?? [];
+  } catch (err) {
+    console.error("GetQuizzes failed", err);
     return [];
   }
-  const quizzes = await fetch("/api/quiz").then((r) => r.json());
-  return quizzes;
 };
 
 export const startGame = async (pin: string, quizId: string) => {
@@ -52,4 +62,24 @@ export const startGame = async (pin: string, quizId: string) => {
     return;
   }
   await connection.invoke("StartGame", pin, quizId);
+};
+
+export const nextQuestion = async (pin: string) => {
+  if (
+    !connection ||
+    connection.state !== signalR.HubConnectionState.Connected
+  ) {
+    await startConnection();
+  }
+  return connection!.invoke("NextQuestion", pin);
+};
+
+export const submitAnswer = async (pin: string, answerIndex: number) => {
+  if (
+    !connection ||
+    connection.state !== signalR.HubConnectionState.Connected
+  ) {
+    await startConnection();
+  }
+  return connection!.invoke("SubmitAnswer", pin, answerIndex);
 };

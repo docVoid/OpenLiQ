@@ -4,10 +4,6 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getConnection, startConnection } from "../../../lib/signalr";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { getConnection, startConnection } from "../../../lib/signalr";
-
 export default function PlayerLobbyPage() {
   const router = useRouter();
   const nickname =
