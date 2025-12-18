@@ -1,6 +1,6 @@
 # OpenLiQ
 
-![OpenLiQ Logo](OpenLiQ_jp.png)
+<img src="OpenLiQ_jp.png" alt="OpenLiQ-Logo" width="400"/>
 
 OpenLiQ is a lightweight, local multiplayer quiz platform. Hosts can create a lobby, players can join with a PIN and nickname, select a quiz, and run through a short quiz while players answer in real time.
 
