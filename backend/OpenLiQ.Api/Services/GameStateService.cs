@@ -44,10 +44,10 @@ public class GameStateService
         ["liebherr"] = new List<Question>
         {
             new Question("Wann wurde Liebherr gegründet?", new[] {"1949","1955","1898","1990"}, 0),
-            new Question("Welches Produkt ist typisch für Liebherr?", new[] {"Kühlschränke","Bagger","Smartphones","Fahrräder"}, 1),
+            new Question("Welches Produkt ist typisch für Liebherr?", new[] {"Waschmaschinen","Fahrräder","Smartphones","Kühlschränke"}, 3),
             new Question("In welchem Land hat Liebherr seinen Hauptsitz?", new[] {"Schweiz","Deutschland","Österreich","Italien"}, 1),
             new Question("Liebherr ist bekannt für ?", new[] {"Lebensmittel","Baumaschinen","Software","Bekleidung"}, 1),
-            new Question("Wie viele Antworten gibt es pro Frage?", new[] {"2","3","4","5"}, 2),
+            new Question("Welche Liebherr Geselschaft ist die größter der Gruppe?", new[] {"Ehingen","Oberopfingen","Roßtock","Bulle"}, 0),
         },
         ["it"] = new List<Question>
         {
