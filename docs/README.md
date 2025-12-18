@@ -1,76 +1,35 @@
-# OpenLiQ Documentation
+# OpenLiQ
 
-## Overview
+![OpenLiQ Logo](OpenLiQ_jp.png)
 
-OpenLiQ is an open-source, real-time quiz game platform built with modern web technologies.
+OpenLiQ is a lightweight, local multiplayer quiz platform. Hosts can create a lobby, players can join with a PIN and nickname, select a quiz, and run through a short quiz while players answer in real time.
 
-## Project Structure
+This repository contains a .NET backend and a Next.js frontend.
 
-```
-OpenLiQ/
-├── backend/
-│   └── OpenLiQ.Api/          # ASP.NET Core 8 Web API
-│       ├── Controllers/
-│       ├── Data/
-│       ├── Hubs/             # SignalR hubs
-│       ├── Models/
-│       └── Program.cs
-├── frontend/                 # Next.js 14 application
-│   └── src/
-│       ├── app/
-│       ├── components/
-│       ├── hooks/
-│       └── lib/
-├── docs/                     # Documentation
-├── docker-compose.yml        # Docker Compose configuration
-├── .gitignore
-└── OpenLiQ.sln
-```
+## Features
 
-## Technology Stack
+- Host creates a lobby and shares a 6-digit PIN with players
+- Players join a lobby using PIN + nickname
+- Host selects one of several quizzes
+- Real-time gameplay using SignalR: questions, timers, answers
+- 4 options per question, 20s timer per question
+- Score tracking and final results shown to all players
 
-### Backend
+## Quickstart (development)
 
-- **Framework**: ASP.NET Core 8
-- **Database**: SQL Server
-- **ORM**: Entity Framework Core
-- **Real-time**: SignalR
+Prerequisites
 
-### Frontend
+- Node.js 18+
+- .NET SDK 8+
 
-- **Framework**: Next.js 14
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Real-time Client**: @microsoft/signalr
-
-### Infrastructure
-
-- **Containerization**: Docker & Docker Compose
-- **Database**: SQL Server 2022
-
-## Getting Started
-
-### Prerequisites
-
-- Docker & Docker Compose
-- .NET 8 SDK (for local development)
-- Node.js 18+ (for local development)
-
-### Running with Docker Compose
+1. Clone the repository
 
 ```bash
-docker-compose up -d
+git clone https://github.com/docVoid/OpenLiQ.git
+cd OpenLiQ
 ```
 
-This will start:
-
-- SQL Server on port 1433
-- Backend API on port 5000
-- Frontend on port 3000
-
-### Local Development
-
-#### Backend
+2. Backend (API + SignalR hub)
 
 ```bash
 cd backend/OpenLiQ.Api
@@ -78,7 +37,9 @@ dotnet restore
 dotnet run
 ```
 
-#### Frontend
+The backend runs the SignalR hub at `http://localhost:5000`.
+
+3. Frontend (Next.js)
 
 ```bash
 cd frontend
@@ -86,34 +47,25 @@ npm install
 npm run dev
 ```
 
-## API Endpoints
+Open `http://localhost:3000` in your browser. Create a lobby as Host, share the PIN with players, let them join via `/player/join`, pick a quiz and start.
 
-- `GET /api/health` - Health check
+## Project structure
 
-## SignalR Hubs
+- `backend/OpenLiQ.Api` - .NET Web API + SignalR hub + in-memory game state service
+- `frontend` - Next.js app with Host and Player views and SignalR client
+- `docs` - assets and documentation
 
-- **GameHub** (ws://localhost:5000/hubs/game)
-  - Methods: `SendWelcome`, `StartGame`, `EndGame`
-  - Events: `ReceiveWelcome`, `GameStarted`, `GameEnded`
+## Configuration
 
-## Environment Configuration
+- Frontend uses `NEXT_PUBLIC_API_URL` to point to the backend SignalR hub, defaults to `http://localhost:5000`.
+- Backend config in `appsettings.json` and `appsettings.Development.json`.
 
-### Backend (.env)
+## License & Attribution
 
-```
-DefaultConnection=Server=localhost,1433;Database=OpenLiQ;User Id=sa;Password=OpenLiQ@2024;
-```
+This project is licensed under the MIT License. See the [LICENSE](LICENSE)
 
-### Frontend (.env.local)
-
-```
-NEXT_PUBLIC_API_URL=http://localhost:5000
-```
+**Attribution:** OpenLiQ — (c) docVoid
 
 ## Contributing
 
-Please follow the existing code structure and conventions.
-
-## License
-
-MIT License - see LICENSE file for details
+Contributions welcome — open issues or PRs.
