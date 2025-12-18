@@ -24,18 +24,6 @@ export default function HostCreatePage() {
 
   useEffect(() => {
     const conn = getConnection();
-    // start connection and ensure it's running before invoking CreateLobby
-    (async () => {
-      await startConnection();
-
-      // create the lobby after the connection is started
-      try {
-        await conn.invoke("CreateLobby");
-      } catch (err) {
-        console.error("CreateLobby invoke failed", err);
-      }
-    })();
-
     const onLobbyCreated = (generatedPin: string) => {
       console.log("LobbyCreated", generatedPin);
       setPin(generatedPin);
@@ -80,6 +68,28 @@ export default function HostCreatePage() {
     conn.on("PlayerListUpdated", onPlayerListUpdated);
     conn.on("QuestionStarted", onQuestionStarted);
     conn.on("GameEnded", onGameEnded);
+
+    // start connection and ensure it's running before invoking CreateLobby
+    (async () => {
+      try {
+        await startConnection();
+        // Attempt to create lobby; if it fails once, retry once after a short delay
+        try {
+          await conn.invoke("CreateLobby");
+        } catch (err) {
+          console.warn("CreateLobby failed, retrying", err);
+          setTimeout(async () => {
+            try {
+              await conn.invoke("CreateLobby");
+            } catch (err2) {
+              console.error("CreateLobby retry failed", err2);
+            }
+          }, 300);
+        }
+      } catch (startErr) {
+        console.error("SignalR start failed", startErr);
+      }
+    })();
 
     return () => {
       conn.off("LobbyCreated", onLobbyCreated);
