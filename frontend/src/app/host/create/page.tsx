@@ -24,7 +24,17 @@ export default function HostCreatePage() {
 
   useEffect(() => {
     const conn = getConnection();
-    startConnection();
+    // start connection and ensure it's running before invoking CreateLobby
+    (async () => {
+      await startConnection();
+
+      // create the lobby after the connection is started
+      try {
+        await conn.invoke("CreateLobby");
+      } catch (err) {
+        console.error("CreateLobby invoke failed", err);
+      }
+    })();
 
     const onLobbyCreated = (generatedPin: string) => {
       console.log("LobbyCreated", generatedPin);
@@ -70,9 +80,6 @@ export default function HostCreatePage() {
     conn.on("PlayerListUpdated", onPlayerListUpdated);
     conn.on("QuestionStarted", onQuestionStarted);
     conn.on("GameEnded", onGameEnded);
-
-    // create the lobby
-    conn.invoke("CreateLobby").catch((err) => console.error(err));
 
     return () => {
       conn.off("LobbyCreated", onLobbyCreated);
