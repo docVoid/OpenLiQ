@@ -11,15 +11,13 @@ export default function PlayerJoinPage() {
   const router = useRouter();
 
   useEffect(() => {
-    startConnection();
+    // register handler once on mount
     const conn = getConnection();
 
     const onJoinResult = (success: boolean, message: string) => {
       console.log("JoinResult", success, message);
       if (success) {
-        // store pin/nickname for simple lobby
-        sessionStorage.setItem("openliq_game_pin", pin);
-        sessionStorage.setItem("openliq_nickname", nickname);
+        // navigation only; storage already written before invoke
         router.push("/player/lobby");
       } else {
         setError(message);
@@ -30,13 +28,19 @@ export default function PlayerJoinPage() {
     return () => {
       conn.off("JoinResult", onJoinResult);
     };
-  }, [pin, nickname, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     const conn = getConnection();
     try {
+      // store values so the lobby page can read them immediately after navigation
+      sessionStorage.setItem("openliq_game_pin", pin);
+      sessionStorage.setItem("openliq_nickname", nickname);
+
+      await startConnection();
       await conn.invoke("JoinLobby", pin, nickname);
     } catch (err) {
       console.error(err);
